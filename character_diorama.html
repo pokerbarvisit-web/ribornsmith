@@ -491,11 +491,13 @@ function place(a) {
   a.sx = sx; a.sy = p.sy; a.scale = p.scale;
   a.el.style.transform = 'translate(' + sx + 'px,' + p.sy + 'px)';
   a.el.style.zIndex = String(Math.round(a.gy * 1000));
-  const H = a.baseH * p.scale;
+  const racing = (mode === 'race' && a.state === 'race');
+  const H = a.baseH * p.scale * (racing ? raceShrink : 1);
   a.H = H;
   a.wrap.style.height = H + 'px';
   a.wrap.style.width = (H * a.aspect) + 'px';
-  a.tag.style.display = (p.scale < 0.62) ? 'none' : 'block';
+  // レース中は順位ラベルを常に表示（奥のレーンでも読めるように）
+  a.tag.style.display = (racing || p.scale >= 0.62) ? 'block' : 'none';
 }
 
 function animateActor(a, dt, now) {
@@ -826,7 +828,7 @@ function wake() { idleT = 0; document.body.classList.remove('idle'); }
 ['pointermove', 'pointerdown', 'keydown', 'wheel'].forEach(ev => window.addEventListener(ev, wake, { passive: true }));
 
 // ---------- race mode ----------
-const RACE = { total: 420, startX: 0.13, anchorX: 0.62, laneTop: 0.40, laneBot: 0.90 };
+const RACE = { total: 420, startX: 0.13, anchorX: 0.62, laneTop: 0.06, laneBot: 0.96 };
 const HAZARDS_DEF = [
   { d: 80,  e: '🪨', t: 'hop'  },
   { d: 140, e: '🍌', t: 'slip' },
@@ -843,7 +845,8 @@ let lastLeadId = null, leadCool = 0, spurted = false, directorT = 2.5, resultsSh
 let raceProps = [];
 let boardKey = '';
 
-const ppm = () => SW / 430;
+const ppm = () => SW / 300; // ズーム率: 1画面 ≈ 300m（差が見えやすいように拡大）
+let raceShrink = 1;         // レース中のキャラ縮小率（人数が多いほど小さくして被りを減らす）
 const laneGy = (i, n) => lerp(RACE.laneTop, RACE.laneBot, (i + 0.5) / Math.max(1, n));
 const raceScreenX = d => SW * RACE.startX + d * ppm() - camShift;
 
@@ -859,6 +862,8 @@ function startRace() {
   props.slice().forEach(removeProp);
   $('#results').style.display = 'none';
   racers = actors.slice();
+  // 人数が多いほど縮小して被りを減らす（4体:0.95 / 8体:0.85 / 12体:0.75）
+  raceShrink = clamp(1.05 - racers.length * 0.025, 0.75, 1);
   finishCount = 0; raceTime = 0; camShift = 0;
   spurted = false; resultsShown = false; lastLeadId = null; leadCool = 0; directorT = 2.5;
   boardKey = '';
@@ -870,7 +875,7 @@ function startRace() {
     a.dist = 0; a.lane = i;
     a.gy = laneGy(i, racers.length);
     a.facing = 1;
-    a.raceBase = rand(12.5, 15.5);
+    a.raceBase = rand(12.0, 16.0); // 個体差を広げて差が付きやすく
     a.formFreq = rand(0.7, 1.6);
     a.formPhase = rand(0, 6.28);
     a.boost = 0; a.turbo = 0; a.stumble = 0; a.slip = 0; a.jumpT = 0;
@@ -887,6 +892,7 @@ function startRace() {
 
 function endRace() {
   raceOn = false;
+  raceShrink = 1;
   document.body.classList.remove('race');
   $('#crown').style.display = 'none';
   $('#countdown').style.display = 'none';
@@ -942,7 +948,7 @@ function buildRaceProps() {
   addProp('gate', 0, 0, '<span class="glabel">START</span>', 'gate');
   addProp('gate', RACE.total, 0, '<span class="glabel">GOAL</span>', 'gate');
   for (let d = 100; d < RACE.total; d += 100) {
-    addProp('emoji', d, 0.36, '🚩<small>' + d + 'm</small>', 'marker');
+    addProp('emoji', d, 0.03, '🚩<small>' + d + 'm</small>', 'marker'); // コース奥端に（レーンと被らない）
   }
   HAZARDS_DEF.forEach(h => addProp('emoji', h.d, 0.66, h.e, 'hazard'));
 }
@@ -982,11 +988,14 @@ function advanceRacer(a, dt, now, packAvg, prog) {
 
   const form = Math.sin(now / 1000 * a.formFreq + a.formPhase);
   const rb = packAvg - a.dist;
-  const catchCoef = 0.0035 + Math.max(0, prog - 0.68) * 0.06;
+  // 中盤のラバーバンドを弱めて差が開くように（0.0035→0.0015）。終盤(0.68〜)は従来どおり強めて接戦に
+  const catchCoef = 0.0015 + Math.max(0, prog - 0.68) * 0.06;
   const capPos = 0.12 + Math.max(0, prog - 0.68) * 1.4;
 
   let speed = a.raceBase * (1 + form * 0.42) + a.boost;
-  speed *= 1 + clamp(rb * catchCoef, -0.16, capPos);
+  // 先頭の減速上限も緩和（-0.16→-0.10）: 逃げが決まりやすく順位が見やすい
+  speed *= 1 + clamp(rb * catchCoef, -0.10, capPos);
+  if (rb > 130) speed *= 1.2; // 画面外に置いていかれない安全弁
   if (a.turbo > 0) { speed *= 1.9; if (Math.random() < 8 * dt) spawnEmoji(a, '🔥'); }
   if (a.stumble > 0) speed *= 0.32;
   if (a.slip > 0) speed *= 0.30;
