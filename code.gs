@@ -3,10 +3,13 @@
 // script.google.com に貼り付けて「ウェブアプリ」としてデプロイしてください。
 // （手順は DRIVE連携_セットアップ.md 参照）
 //
-// 2つの役割:
-//   GET …/exec           → キャラ一覧のJSON
-//   GET …/exec?img=ID    → 画像本体をbase64のdata:URLテキストで返す
-//                           （CORS制限を回避し、アプリ側で白抜きできるようにする）
+// 4つの役割:
+//   GET  …/exec           → キャラ一覧のJSON
+//   GET  …/exec?img=ID    → 画像本体をbase64のdata:URLテキストで返す
+//                            （CORS制限を回避し、アプリ側で白抜きできるようにする）
+//   GET  …/exec?names=1   → フォルダ内の生ファイル名一覧（アップローダーの重複チェック用）
+//   POST …/exec           → 画像アップロード受付（uploader.html から使用）
+//                            body: {"upload":true,"name":"...","mime":"image/png","data":"<base64>"}
 
 const FOLDER_ID = '1KoexIA7NFdKlvBOOSu5aVyOwQoINUqqV'; // ご当地キャラを作ろう！
 
@@ -14,7 +17,46 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.img) {
     return serveImage(e.parameter.img);
   }
+  if (e && e.parameter && e.parameter.names) {
+    return serveNames();
+  }
   return serveList();
+}
+
+function doPost(e) {
+  let out = { ok: false };
+  try {
+    const req = JSON.parse(e.postData.contents);
+    if (req && req.upload && req.name && req.data) {
+      const folder = DriveApp.getFolderById(FOLDER_ID);
+      if (folder.getFilesByName(req.name).hasNext()) {
+        out = { ok: true, status: 'skipped' }; // 同名ファイルは重複追加しない
+      } else {
+        const blob = Utilities.newBlob(
+          Utilities.base64Decode(req.data), req.mime || 'image/png', req.name);
+        folder.createFile(blob);
+        out = { ok: true, status: 'created' };
+      }
+    } else {
+      out = { ok: false, error: 'bad request' };
+    }
+  } catch (err) {
+    out = { ok: false, error: String(err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(out))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function serveNames() {
+  const folder = DriveApp.getFolderById(FOLDER_ID);
+  const files = folder.getFiles();
+  const out = [];
+  while (files.hasNext()) {
+    const f = files.next();
+    if (f.getMimeType().indexOf('image/') === 0) out.push(f.getName());
+  }
+  return ContentService.createTextOutput(JSON.stringify(out))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function serveList() {

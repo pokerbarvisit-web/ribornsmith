@@ -80,6 +80,23 @@ bigscreen.html?gas=https://script.google.com/macros/s/XXXX/exec
 - ブラウザで GAS の URL を直接開くと JSON の配列が見えるはずです。
   `[{"name":"…","url":"https://drive.google.com/thumbnail?id=…","id":"…","time":…}]`
 
+## 生成PCからの自動アップロード（uploader.html）
+
+各生成PCのローカルフォルダに保存されたキャラ画像を、自動でDriveへ送る
+「見張り番」ページです。インストール・Googleログインは不要です。
+
+1. 生成PCの **Chrome または Edge** で
+   `https://pokerbarvisit-web.github.io/chara-hakoniwa/uploader.html` を開く
+2. 「📁 フォルダを選ぶ」→ キャラ画像が保存されるフォルダを選択
+3. あとは開いたままにするだけ。5秒ごとに新しい画像を見つけて自動送信します
+   - 同じファイル名は二重送信されません（PCを再起動してやり直しても安全）
+   - 書き込み途中のファイルは完了を待ってから送ります
+   - **ウィンドウは最小化しない**こと（裏に回すと送信間隔が約1分に伸びます）
+
+流れ: 生成PCのフォルダ → (uploader) → Drive → (15秒毎の自動更新) → 箱庭に登場
+
+※この機能には GAS の**再デプロイ**（`code.gs` を最新にして「新バージョン」で更新）が必要です。
+
 ## 運用のコツ・注意点
 
 - **透過について**: 画像はGAS経由（`?img=ID`）で取得するため、白背景の

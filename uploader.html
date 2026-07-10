@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>キャラ箱庭 — 自動アップローダー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=M+PLUS+Rounded+1c:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%;background:linear-gradient(180deg,#8ed4ff,#eaf8ff 40%,#d8f2c8);font-family:'M PLUS Rounded 1c',system-ui,sans-serif;color:#27435c}
+.wrap{max-width:680px;margin:0 auto;padding:32px 18px 60px}
+h1{font-family:'Baloo 2','M PLUS Rounded 1c',sans-serif;font-weight:800;font-size:30px;color:#1e5f8a;text-align:center}
+h1 small{display:block;font-family:'M PLUS Rounded 1c',sans-serif;font-size:14px;font-weight:800;color:#4a7ea0;margin-top:4px}
+.card{background:rgba(255,255,255,.9);border-radius:20px;padding:22px 24px;margin-top:18px;box-shadow:0 8px 26px rgba(30,80,120,.12)}
+.step{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px}
+.step .num{flex:none;width:30px;height:30px;border-radius:999px;background:#2f8fdd;color:#fff;font-weight:900;display:flex;align-items:center;justify-content:center}
+.step p{font-weight:700;line-height:1.6;padding-top:3px}
+#pickBtn{display:block;width:100%;margin-top:14px;font-family:inherit;font-weight:900;font-size:20px;color:#fff;background:linear-gradient(#ff9d4d,#f4772a);border:none;border-radius:999px;padding:16px;cursor:pointer;box-shadow:0 6px 0 #c95c1a;transition:transform .1s}
+#pickBtn:active{transform:translateY(4px);box-shadow:0 2px 0 #c95c1a}
+#pickBtn:disabled{opacity:.5;cursor:default}
+#state{margin-top:14px;text-align:center;font-weight:900;font-size:15px}
+#state.on{color:#1d8a4e}
+#state.err{color:#c0392b}
+.pulse{display:inline-block;width:10px;height:10px;border-radius:50%;background:#1d8a4e;margin-right:8px;animation:pu 1.4s ease-in-out infinite;vertical-align:1px}
+@keyframes pu{0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
+.counts{display:flex;gap:10px;justify-content:center;margin-top:12px}
+.counts div{background:#eef7ff;border-radius:12px;padding:8px 16px;font-weight:900;font-size:14px;color:#2a6a99}
+.counts b{font-size:20px;display:block;text-align:center}
+#log{margin-top:14px;max-height:300px;overflow:auto;font-size:13px;font-weight:700}
+#log .row{display:flex;justify-content:space-between;gap:10px;padding:6px 8px;border-bottom:1px dashed #cfe3ef}
+#log .row span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#log .ok{color:#1d8a4e;flex:none}
+#log .ng{color:#c0392b;flex:none}
+#log .wip{color:#b8860b;flex:none}
+details{margin-top:14px;font-size:13px}
+details summary{cursor:pointer;font-weight:800;color:#4a7ea0}
+details input{width:100%;margin-top:8px;padding:9px 12px;border-radius:10px;border:1.5px solid #bcd6e6;font-family:inherit;font-size:12px}
+.note{margin-top:12px;font-size:12.5px;font-weight:700;color:#5b7d95;line-height:1.7}
+#nosupport{display:none;margin-top:12px;background:#fdecea;color:#c0392b;border-radius:12px;padding:12px 16px;font-weight:800;font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📤 キャラ自動アップローダー<small>キャラ箱庭 いわくに — 生成PC用</small></h1>
+
+  <div class="card">
+    <div class="step"><div class="num">1</div><p>下のボタンで、キャラ画像が保存されるフォルダを選ぶ</p></div>
+    <div class="step"><div class="num">2</div><p>あとはこの画面を開いたままにするだけ。新しい画像を見つけたら自動でDriveへ送ります</p></div>
+    <button id="pickBtn">📁 フォルダを選ぶ</button>
+    <div id="nosupport">⚠️ このブラウザは対応していません。<b>Chrome か Edge</b> で開いてください。</div>
+    <div id="state">未接続</div>
+    <div class="counts">
+      <div><b id="cSent">0</b>送信済み</div>
+      <div><b id="cSkip">0</b>既にあり</div>
+      <div><b id="cErr">0</b>エラー</div>
+    </div>
+    <div id="log"></div>
+    <details>
+      <summary>詳細設定（通常は変更不要）</summary>
+      <input type="text" id="gasUrl" spellcheck="false">
+    </details>
+    <div class="note">
+      ・このウィンドウは<b>最小化せず、開いたまま</b>にしてください（裏に回すと送信間隔が長くなります）<br>
+      ・同じ名前のファイルは二重送信されません（複数回開いても安全）<br>
+      ・箱庭側には、Driveに入ってから約15秒で登場します
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const DEFAULT_GAS = 'https://script.google.com/macros/s/AKfycbwhwJmMef2jPxrVbstOFCFFWurCTIsv0W6UL-ozaC7xYPlAy5qXlHkyOSjGVM1w35s76A/exec';
+const $ = s => document.querySelector(s);
+
+const params = new URLSearchParams(location.search);
+$('#gasUrl').value = params.get('gas') || DEFAULT_GAS;
+const gasUrl = () => $('#gasUrl').value.trim();
+
+let dirHandle = null;
+const done = new Set();      // 送信済み・既存のファイル名
+const failCount = new Map(); // ファイル名 → 連続失敗回数
+let scanning = false;
+let sent = 0, skipped = 0, errors = 0;
+
+if (!window.showDirectoryPicker) {
+  $('#nosupport').style.display = 'block';
+  $('#pickBtn').disabled = true;
+}
+
+function setState(text, cls) {
+  const el = $('#state');
+  el.className = cls || '';
+  el.innerHTML = (cls === 'on' ? '<span class="pulse"></span>' : '') + text;
+}
+function updateCounts() {
+  $('#cSent').textContent = sent;
+  $('#cSkip').textContent = skipped;
+  $('#cErr').textContent = errors;
+}
+const logRows = new Map();
+function logRow(name, statusHtml) {
+  let row = logRows.get(name);
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<span></span><span></span>';
+    row.firstChild.textContent = name;
+    $('#log').prepend(row);
+    logRows.set(name, row);
+  }
+  row.lastChild.outerHTML = statusHtml;
+}
+
+function bufToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  }
+  return btoa(bin);
+}
+
+// 起動時: Drive側の既存ファイル名を取得して重複送信を防ぐ
+async function preloadExisting() {
+  const r = await fetch(gasUrl() + '?names=1', { cache: 'no-store' });
+  const arr = await r.json();
+  if (!Array.isArray(arr)) throw new Error('names endpoint error');
+  arr.forEach(n => done.add(n));
+  return arr.length;
+}
+
+async function uploadFile(name, file) {
+  logRow(name, '<span class="wip">送信中…</span>');
+  const b64 = bufToBase64(await file.arrayBuffer());
+  // Content-Type: text/plain にすることでCORSプリフライトを回避（GAS対応のため必須）
+  const res = await fetch(gasUrl(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ upload: true, name, mime: file.type || 'image/png', data: b64 }),
+  });
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error || 'upload failed');
+  done.add(name);
+  failCount.delete(name);
+  if (j.status === 'skipped') { skipped++; logRow(name, '<span class="ok">既にあり</span>'); }
+  else { sent++; logRow(name, '<span class="ok">完了 ✓</span>'); }
+  updateCounts();
+}
+
+async function scan() {
+  if (!dirHandle || scanning) return;
+  scanning = true;
+  try {
+    for await (const entry of dirHandle.values()) {
+      if (entry.kind !== 'file') continue;
+      const name = entry.name;
+      if (!/\.(png|jpe?g|webp|gif)$/i.test(name)) continue;
+      if (done.has(name)) continue;
+      if ((failCount.get(name) || 0) >= 5) continue; // 5回失敗したら諦める（表示は残す）
+      let file;
+      try { file = await entry.getFile(); } catch (e) { continue; }
+      if (Date.now() - file.lastModified < 4000) continue; // 書き込み完了を待つ
+      try {
+        await uploadFile(name, file);
+      } catch (e) {
+        const n = (failCount.get(name) || 0) + 1;
+        failCount.set(name, n);
+        errors++;
+        updateCounts();
+        logRow(name, '<span class="ng">エラー(' + n + '回目)</span>');
+      }
+    }
+    setState('見張り中 — 新しい画像を自動送信します', 'on');
+  } catch (e) {
+    setState('フォルダを読めません: ' + e.message, 'err');
+  } finally {
+    scanning = false;
+  }
+}
+
+$('#pickBtn').addEventListener('click', async () => {
+  try {
+    dirHandle = await window.showDirectoryPicker();
+  } catch (e) { return; } // キャンセル
+  setState('Driveの既存ファイルを確認中…');
+  try {
+    const n = await preloadExisting();
+    setState('接続OK（Drive側に ' + n + ' 枚）— フォルダを確認中…', 'on');
+  } catch (e) {
+    setState('GASに接続できません。URLとデプロイを確認してください', 'err');
+    return;
+  }
+  $('#pickBtn').textContent = '📁 ' + dirHandle.name + ' を見張り中（クリックで変更）';
+  scan();
+});
+
+setInterval(scan, 5000);
+</script>
+</body>
+</html>
