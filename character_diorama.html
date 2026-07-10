@@ -358,7 +358,7 @@ const SAMPLE_NAMES = ['もみじ', 'れんこん', 'あゆ', 'こい', 'しろ�
 let sampleN = 0;
 
 // ---------- actors ----------
-const MAX_CHARS = 12;
+const MAX_CHARS = 30;
 const actors = [];
 const seenIds = new Set();
 let uid = 0;
@@ -367,7 +367,7 @@ const FOODS = ['🍙', '🍡', '🍦', '🍎', '🍉', '🍓', '🍌', '🧁', '
 const CHAT_EMOJI = ['❤️', '♪', '！', '😊', '✨', '⭐', '🎵', '😆'];
 const IDLE_EMOJI = ['♪', '😊', '✨', '🎵', '☀️', '❓'];
 
-function updateCount() { $('#count').textContent = actors.length + '/12体'; }
+function updateCount() { $('#count').textContent = actors.length + '/' + MAX_CHARS + '体'; }
 
 function makeActor(name, id) {
   const el = document.createElement('div');
@@ -459,7 +459,7 @@ function addCharacter(item) {
   seenIds.add(id);
   const a = makeActor(item.name || 'キャラ', id);
   actors.push(a);
-  while (actors.length > MAX_CHARS) removeActor(actors[0]); // FIFO: keep newest 12
+  while (actors.length > MAX_CHARS) removeActor(actors[0]); // FIFO: 常に最新MAX_CHARS体
   if (mode === 'race') { // joins mid-race: wait at the sideline
     a.gx = rand(0.03, 0.1); a.gy = rand(0.92, 0.97); a.state = 'pause'; a.stateT = 9999;
   }
@@ -862,8 +862,8 @@ function startRace() {
   props.slice().forEach(removeProp);
   $('#results').style.display = 'none';
   racers = actors.slice();
-  // 人数が多いほど縮小して被りを減らす（4体:0.95 / 8体:0.85 / 12体:0.75）
-  raceShrink = clamp(1.05 - racers.length * 0.025, 0.75, 1);
+  // 人数が多いほど縮小して被りを減らす（4体:0.97 / 8体:0.86 / 12体:0.74 / 20体〜:0.55）
+  raceShrink = clamp(1.08 - racers.length * 0.028, 0.55, 1);
   finishCount = 0; raceTime = 0; camShift = 0;
   spurted = false; resultsShown = false; lastLeadId = null; leadCool = 0; directorT = 2.5;
   boardKey = '';
