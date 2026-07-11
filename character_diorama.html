@@ -474,19 +474,61 @@ function makeActor(name, id) {
   return a;
 }
 
+// ---- GAS base64プロキシの取得キュー ----
+// 同時取得を絞り(GASの同時実行制限対策)、失敗はリトライ。
+// リトライが尽きたら一旦サムネイル(枠付き)で表示し、60秒毎に再挑戦して
+// 成功したら白抜き表示へ自動回復する。
+const b64Queue = [];
+let b64Active = 0;
+const B64_CONCURRENT = 3;
+
+function enqueueB64(a, item, attempt) {
+  b64Queue.push({ a, item, attempt: attempt || 0 });
+  pumpB64();
+}
+function pumpB64() {
+  while (b64Active < B64_CONCURRENT && b64Queue.length) runB64(b64Queue.shift());
+}
+async function runB64(job) {
+  const { a, item, attempt } = job;
+  if (!a.el.isConnected) return; // FIFOで退場済み
+  b64Active++;
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 20000);
+    const r = await fetch(item.url, { cache: 'no-store', signal: ctl.signal });
+    clearTimeout(timer);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const t = await r.text();
+    if (!/^data:image\//.test(t)) throw new Error('bad payload');
+    a.processed = false;                 // 再処理を許可（サムネ表示からの回復時に必要）
+    a.el.classList.remove('framed');
+    loadActorImage(a, { name: item.name, url: t });
+  } catch (e) {
+    if (attempt < 3) {
+      // 2秒→4秒→8秒で再試行
+      setTimeout(() => enqueueB64(a, item, attempt + 1), 2000 * Math.pow(2, attempt));
+    } else {
+      if (attempt === 3) {
+        // 一旦サムネイル(枠付き)で表示しておく
+        a.processed = false;
+        loadActorImage(a, { name: item.name, url: item.thumb || FALLBACK_IMG, transparent: !item.thumb });
+      }
+      if (attempt < 10) {
+        // 60秒毎に再挑戦 → 成功すれば白抜きに自動回復
+        setTimeout(() => enqueueB64(a, item, attempt + 1), 60000);
+      }
+    }
+  } finally {
+    b64Active--;
+    pumpB64();
+  }
+}
+
 function loadActorImage(a, item) {
   // GASのbase64プロキシ経由: data:URLを取得してから読み込む（CORSを回避して白抜き可能に）
   if (item.b64) {
-    fetch(item.url, { cache: 'no-store' })
-      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-      .then(t => {
-        if (!/^data:image\//.test(t)) throw new Error('bad payload');
-        loadActorImage(a, { name: item.name, url: t });
-      })
-      .catch(() => {
-        // フォールバック: サムネイルURL（白抜き不可ならアクスタ枠になる）
-        loadActorImage(a, { name: item.name, url: item.thumb || FALLBACK_IMG, transparent: !item.thumb });
-      });
+    enqueueB64(a, item, 0);
     return;
   }
   const url = item.url;
