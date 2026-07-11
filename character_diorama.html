@@ -95,6 +95,11 @@ body.race #board{display:block}
 .drive label{font-size:12px;font-weight:800;display:flex;gap:5px;align-items:center;cursor:pointer}
 body.idle .dock,body.idle .hint{opacity:0;pointer-events:none}
 body.idle .dock{transform:translateX(-50%) translateY(18px)}
+#dockToggle{position:absolute;bottom:14px;right:14px;z-index:5001;width:46px;height:46px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:rgba(14,24,42,.55);color:#fff;font-size:21px;cursor:pointer;display:none;transition:opacity .5s;backdrop-filter:blur(6px)}
+#dockToggle:hover{background:rgba(14,24,42,.8)}
+body.dockHidden .dock{display:none}
+body.dockHidden #dockToggle{display:block}
+body.idle #dockToggle{opacity:.25}
 </style>
 </head>
 <body>
@@ -116,6 +121,7 @@ body.idle .dock{transform:translateX(-50%) translateY(18px)}
   <div id="countdown"></div>
   <div id="results"></div>
 
+  <button id="dockToggle" title="操作パネルを表示">⚙️</button>
   <div class="brand">キャラ箱庭 <span>いわくに</span></div>
   <div class="hint" id="hint">地面タップでごはん🍙 / キャラタップでよろこぶ❤️</div>
 
@@ -128,6 +134,7 @@ body.idle .dock{transform:translateX(-50%) translateY(18px)}
       <button id="btnSample">サンプル+</button>
       <button id="btnClear">全消去</button>
       <button id="btnFull">全画面</button>
+      <button id="btnHideDock">パネルを隠す ▼</button>
     </div>
     <div class="row" id="sceneSeg">
       <span class="lbl">背景</span>
@@ -799,7 +806,7 @@ function startPlay() {
 // ---------- tap interaction ----------
 stage.addEventListener('pointerdown', e => {
   wake();
-  if (e.target.closest('.dock') || e.target.closest('#results')) return;
+  if (e.target.closest('.dock') || e.target.closest('#results') || e.target.closest('#dockToggle')) return;
   if (mode === 'race') return;
   const sx = e.clientX, sy = e.clientY;
   const hit = actors.slice().sort((a, b) => b.gy - a.gy).find(a => {
@@ -1174,6 +1181,8 @@ $('#btnSample').addEventListener('click', () => {
 });
 $('#btnClear').addEventListener('click', () => { clearAll(); hint('全キャラを消去しました'); });
 $('#btnDrive').addEventListener('click', () => loadDrive(true));
+$('#btnHideDock').addEventListener('click', () => document.body.classList.add('dockHidden'));
+$('#dockToggle').addEventListener('click', () => document.body.classList.remove('dockHidden'));
 $('#btnFull').addEventListener('click', () => {
   try {
     if (document.fullscreenElement) document.exitFullscreen();
