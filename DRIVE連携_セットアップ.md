@@ -86,7 +86,7 @@ bigscreen.html?gas=https://script.google.com/macros/s/XXXX/exec
 「見張り番」ページです。インストール・Googleログインは不要です。
 
 1. 生成PCの **Chrome または Edge** で
-   `https://pokerbarvisit-web.github.io/chara-hakoniwa/uploader.html` を開く
+   `https://pokerbarvisit-web.github.io/ribornsmith/uploader.html` を開く
 2. 「📁 フォルダを選ぶ」→ キャラ画像が保存されるフォルダを選択
 3. あとは開いたままにするだけ。5秒ごとに新しい画像を見つけて自動送信します
    - 同じファイル名は二重送信されません（PCを再起動してやり直しても安全）
