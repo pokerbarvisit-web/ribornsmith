@@ -60,6 +60,7 @@ details input{width:100%;margin-top:8px;padding:9px 12px;border-radius:10px;bord
     <details>
       <summary>詳細設定（通常は変更不要）</summary>
       <input type="text" id="gasUrl" spellcheck="false">
+      <input type="password" id="upKey" placeholder="アップロードキー（GASのスクリプトプロパティ UPLOAD_KEY）" autocomplete="off" spellcheck="false">
     </details>
     <div class="note">
       ・このウィンドウは<b>最小化せず、開いたまま</b>にしてください（裏に回すと送信間隔が長くなります）<br>
@@ -77,6 +78,24 @@ const $ = s => document.querySelector(s);
 const params = new URLSearchParams(location.search);
 $('#gasUrl').value = params.get('gas') || DEFAULT_GAS;
 const gasUrl = () => $('#gasUrl').value.trim();
+
+// アップロードキー: 初回に入力してもらい、このブラウザの localStorage に保存
+const KEY_STORE = 'ribornsmith_upload_key';
+function loadKey() { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
+function saveKey(k) { try { if (k) localStorage.setItem(KEY_STORE, k); else localStorage.removeItem(KEY_STORE); } catch (e) {} }
+$('#upKey').value = loadKey();
+$('#upKey').addEventListener('change', () => { saveKey($('#upKey').value.trim()); authFailed = false; });
+const uploadKey = () => $('#upKey').value.trim();
+function ensureKey(force) {
+  if (uploadKey() && !force) return true;
+  const k = (window.prompt('アップロードキーを入力してください（運営者に確認）', '') || '').trim();
+  if (!k) return false;
+  $('#upKey').value = k;
+  saveKey(k);
+  authFailed = false;
+  return true;
+}
+let authFailed = false;
 
 let dirHandle = null;
 const done = new Set();      // 送信済み・既存のファイル名
@@ -113,6 +132,14 @@ function logRow(name, statusHtml) {
   row.lastChild.outerHTML = statusHtml;
 }
 
+const MAX_BYTES = 8 * 1024 * 1024; // GAS側の上限と同じ
+function mimeOf(name, file) {
+  if (/\.png$/i.test(name)) return 'image/png';
+  if (/\.jpe?g$/i.test(name)) return 'image/jpeg';
+  if (/\.webp$/i.test(name)) return 'image/webp';
+  return file.type || '';
+}
+
 function bufToBase64(buf) {
   const bytes = new Uint8Array(buf);
   let bin = '';
@@ -139,9 +166,15 @@ async function uploadFile(name, file) {
   const res = await fetch(gasUrl(), {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ upload: true, name, mime: file.type || 'image/png', data: b64 }),
+    body: JSON.stringify({ upload: true, key: uploadKey(), name, mime: mimeOf(name, file), data: b64 }),
   });
   const j = await res.json();
+  if (!j.ok && j.error === 'unauthorized') {
+    authFailed = true;
+    logRow(name, '<span class="ng">キー不一致</span>');
+    setState('アップロードキーが違います。フォルダを選び直してキーを入力してください', 'err');
+    throw Object.assign(new Error('unauthorized'), { auth: true });
+  }
   if (!j.ok) throw new Error(j.error || 'upload failed');
   done.add(name);
   failCount.delete(name);
@@ -151,21 +184,27 @@ async function uploadFile(name, file) {
 }
 
 async function scan() {
-  if (!dirHandle || scanning) return;
+  if (!dirHandle || scanning || authFailed) return;
   scanning = true;
   try {
     for await (const entry of dirHandle.values()) {
       if (entry.kind !== 'file') continue;
       const name = entry.name;
-      if (!/\.(png|jpe?g|webp|gif)$/i.test(name)) continue;
+      if (!/\.(png|jpe?g|webp)$/i.test(name)) continue;
       if (done.has(name)) continue;
       if ((failCount.get(name) || 0) >= 5) continue; // 5回失敗したら諦める（表示は残す）
       let file;
       try { file = await entry.getFile(); } catch (e) { continue; }
       if (Date.now() - file.lastModified < 4000) continue; // 書き込み完了を待つ
+      if (file.size > MAX_BYTES) {
+        done.add(name); errors++; updateCounts();
+        logRow(name, '<span class="ng">8MB超のため送信不可</span>');
+        continue;
+      }
       try {
         await uploadFile(name, file);
       } catch (e) {
+        if (e.auth) return;
         const n = (failCount.get(name) || 0) + 1;
         failCount.set(name, n);
         errors++;
@@ -173,7 +212,7 @@ async function scan() {
         logRow(name, '<span class="ng">エラー(' + n + '回目)</span>');
       }
     }
-    setState('見張り中 — 新しい画像を自動送信します', 'on');
+    if (!authFailed) setState('見張り中 — 新しい画像を自動送信します', 'on');
   } catch (e) {
     setState('フォルダを読めません: ' + e.message, 'err');
   } finally {
@@ -182,6 +221,7 @@ async function scan() {
 }
 
 $('#pickBtn').addEventListener('click', async () => {
+  if (!ensureKey(authFailed)) { setState('アップロードキーが必要です', 'err'); return; }
   try {
     dirHandle = await window.showDirectoryPicker();
   } catch (e) { return; } // キャンセル
